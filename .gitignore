@@ -1,0 +1,26 @@
+# Data files (too large for GitHub)
+data/raw/*.csv
+data/processed/*.csv
+data/processed/*.parquet
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Keep the folder structure but not the files
+!data/raw/.gitkeep
+!data/processed/.gitkeep
