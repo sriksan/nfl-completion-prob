@@ -27,7 +27,7 @@ def load_plays():
     # Keep only pass plays
     pass_plays = plays[plays['PassResult'].notna()].copy()
     
-    # Pandas DataFrame (Binary column for completion)
+    # Pandas DataFrame (adding Binary column for completion)
     # Complete = 1, Everything else = 0
     pass_plays['complete'] = (pass_plays['PassResult'] == 'C').astype(int)
     
