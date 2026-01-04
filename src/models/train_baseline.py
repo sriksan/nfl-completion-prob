@@ -11,7 +11,7 @@ sys.path.append(str(src_dir / 'features'))
 
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import GroupKFold
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import log_loss, roc_auc_score, accuracy_score
 from sklearn.linear_model import LogisticRegression
 import xgboost as xgb
@@ -67,67 +67,52 @@ print(f"Completion rate: {play_df['complete'].mean():.1%}")
 # Prepare X and y
 X = play_df[available_features].values
 y = play_df['complete'].values
-groups = play_df['gameId'].values  # For GroupKFold
 
 print(f"\nX shape: {X.shape}")
 print(f"y shape: {y.shape}")
-print(f"Unique games: {len(np.unique(groups))}")
 
-# Step 3: Cross-validation setup
+# Step 3: Train/Test Split
 print("\n" + "="*70)
-print("4. CROSS-VALIDATION SETUP")
+print("4. TRAIN/TEST SPLIT")
 print("="*70)
 
-# Group K-Fold: Keep all plays from same game together
-n_splits = 5
-gkf = GroupKFold(n_splits=n_splits)
+from sklearn.model_selection import train_test_split
 
-print(f"Using {n_splits}-Fold Group Cross-Validation by gameId")
-print("This prevents data leakage between train and test!")
+# 80/20 split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print(f"Train set: {len(X_train)} plays ({y_train.mean():.1%} completion rate)")
+print(f"Test set:  {len(X_test)} plays ({y_test.mean():.1%} completion rate)")
 
 # Step 4: Train Baseline Logistic Regression
 print("\n" + "="*70)
 print("5. BASELINE MODEL: LOGISTIC REGRESSION")
 print("="*70)
 
-lr_scores = {'log_loss': [], 'auc': [], 'accuracy': []}
+# Train model
+lr_model = LogisticRegression(random_state=42, max_iter=1000)
+lr_model.fit(X_train, y_train)
 
-for fold, (train_idx, val_idx) in enumerate(gkf.split(X, y, groups), 1):
-    X_train, X_val = X[train_idx], X[val_idx]
-    y_train, y_val = y[train_idx], y[val_idx]
-    
-    # Train model
-    lr_model = LogisticRegression(random_state=42, max_iter=1000)
-    lr_model.fit(X_train, y_train)
-    
-    # Predict probabilities
-    y_pred_proba = lr_model.predict_proba(X_val)[:, 1]
-    y_pred = (y_pred_proba >= 0.5).astype(int)
-    
-    # Calculate metrics
-    ll = log_loss(y_val, y_pred_proba)
-    auc = roc_auc_score(y_val, y_pred_proba)
-    acc = accuracy_score(y_val, y_pred)
-    
-    lr_scores['log_loss'].append(ll)
-    lr_scores['auc'].append(auc)
-    lr_scores['accuracy'].append(acc)
-    
-    print(f"Fold {fold}: Log Loss={ll:.4f}, AUC={auc:.4f}, Accuracy={acc:.4f}")
+# Predict on test set
+y_pred_proba_lr = lr_model.predict_proba(X_test)[:, 1]
+y_pred_lr = (y_pred_proba_lr >= 0.5).astype(int)
 
-print(f"\n{'='*70}")
-print("LOGISTIC REGRESSION - AVERAGE RESULTS:")
-print(f"{'='*70}")
-print(f"Log Loss:  {np.mean(lr_scores['log_loss']):.4f} ± {np.std(lr_scores['log_loss']):.4f}")
-print(f"AUC:       {np.mean(lr_scores['auc']):.4f} ± {np.std(lr_scores['auc']):.4f}")
-print(f"Accuracy:  {np.mean(lr_scores['accuracy']):.4f} ± {np.std(lr_scores['accuracy']):.4f}")
+# Calculate metrics
+lr_ll = log_loss(y_test, y_pred_proba_lr)
+lr_auc = roc_auc_score(y_test, y_pred_proba_lr)
+lr_acc = accuracy_score(y_test, y_pred_lr)
+
+print(f"Test Set Results:")
+print(f"  Log Loss:  {lr_ll:.4f}")
+print(f"  AUC:       {lr_auc:.4f}")
+print(f"  Accuracy:  {lr_acc:.4f}")
 
 # Step 5: Train XGBoost
 print("\n" + "="*70)
 print("6. PRIMARY MODEL: XGBOOST")
 print("="*70)
-
-xgb_scores = {'log_loss': [], 'auc': [], 'accuracy': []}
 
 # XGBoost parameters
 params = {
@@ -139,35 +124,23 @@ params = {
     'random_state': 42
 }
 
-for fold, (train_idx, val_idx) in enumerate(gkf.split(X, y, groups), 1):
-    X_train, X_val = X[train_idx], X[val_idx]
-    y_train, y_val = y[train_idx], y[val_idx]
-    
-    # Train model
-    xgb_model = xgb.XGBClassifier(**params)
-    xgb_model.fit(X_train, y_train, verbose=False)
-    
-    # Predict probabilities
-    y_pred_proba = xgb_model.predict_proba(X_val)[:, 1]
-    y_pred = (y_pred_proba >= 0.5).astype(int)
-    
-    # Calculate metrics
-    ll = log_loss(y_val, y_pred_proba)
-    auc = roc_auc_score(y_val, y_pred_proba)
-    acc = accuracy_score(y_val, y_pred)
-    
-    xgb_scores['log_loss'].append(ll)
-    xgb_scores['auc'].append(auc)
-    xgb_scores['accuracy'].append(acc)
-    
-    print(f"Fold {fold}: Log Loss={ll:.4f}, AUC={auc:.4f}, Accuracy={acc:.4f}")
+# Train model
+xgb_model = xgb.XGBClassifier(**params)
+xgb_model.fit(X_train, y_train, verbose=False)
 
-print(f"\n{'='*70}")
-print("XGBOOST - AVERAGE RESULTS:")
-print(f"{'='*70}")
-print(f"Log Loss:  {np.mean(xgb_scores['log_loss']):.4f} ± {np.std(xgb_scores['log_loss']):.4f}")
-print(f"AUC:       {np.mean(xgb_scores['auc']):.4f} ± {np.std(xgb_scores['auc']):.4f}")
-print(f"Accuracy:  {np.mean(xgb_scores['accuracy']):.4f} ± {np.std(xgb_scores['accuracy']):.4f}")
+# Predict on test set
+y_pred_proba_xgb = xgb_model.predict_proba(X_test)[:, 1]
+y_pred_xgb = (y_pred_proba_xgb >= 0.5).astype(int)
+
+# Calculate metrics
+xgb_ll = log_loss(y_test, y_pred_proba_xgb)
+xgb_auc = roc_auc_score(y_test, y_pred_proba_xgb)
+xgb_acc = accuracy_score(y_test, y_pred_xgb)
+
+print(f"Test Set Results:")
+print(f"  Log Loss:  {xgb_ll:.4f}")
+print(f"  AUC:       {xgb_auc:.4f}")
+print(f"  Accuracy:  {xgb_acc:.4f}")
 
 # Step 6: Compare models
 print("\n" + "="*70)
@@ -177,33 +150,22 @@ print("="*70)
 print("\n                   Logistic Regression    XGBoost         Improvement")
 print("-" * 70)
 
-lr_ll = np.mean(lr_scores['log_loss'])
-xgb_ll = np.mean(xgb_scores['log_loss'])
 ll_improvement = ((lr_ll - xgb_ll) / lr_ll) * 100
-
-lr_auc = np.mean(lr_scores['auc'])
-xgb_auc = np.mean(xgb_scores['auc'])
 auc_improvement = ((xgb_auc - lr_auc) / lr_auc) * 100
-
-lr_acc = np.mean(lr_scores['accuracy'])
-xgb_acc = np.mean(xgb_scores['accuracy'])
 acc_improvement = ((xgb_acc - lr_acc) / lr_acc) * 100
 
 print(f"Log Loss:     {lr_ll:.4f}              {xgb_ll:.4f}          {ll_improvement:+.1f}%")
 print(f"AUC:          {lr_auc:.4f}              {xgb_auc:.4f}          {auc_improvement:+.1f}%")
 print(f"Accuracy:     {lr_acc:.4f}              {xgb_acc:.4f}          {acc_improvement:+.1f}%")
 
-# Step 7: Feature importance (train final model on all data)
+# Step 7: Feature importance (using the trained XGBoost model)
 print("\n" + "="*70)
 print("8. FEATURE IMPORTANCE")
 print("="*70)
 
-final_model = xgb.XGBClassifier(**params)
-final_model.fit(X, y, verbose=False)
-
 importance_df = pd.DataFrame({
     'feature': available_features,
-    'importance': final_model.feature_importances_
+    'importance': xgb_model.feature_importances_
 }).sort_values('importance', ascending=False)
 
 print("\nTop features for predicting pass completion:")
@@ -215,19 +177,25 @@ print("\n" + "="*70)
 print("9. SAMPLE PREDICTIONS")
 print("="*70)
 
-# Get predictions for a few plays
-sample_plays = play_df.sample(min(5, len(play_df)), random_state=42)
-sample_X = sample_plays[available_features].values
-sample_probs = final_model.predict_proba(sample_X)[:, 1]
+# Get predictions for test set
+sample_indices = np.random.choice(len(X_test), min(5, len(X_test)), replace=False)
+sample_X = X_test[sample_indices]
+sample_y = y_test[sample_indices]
+sample_probs = xgb_model.predict_proba(sample_X)[:, 1]
 
-print("\nPredictions for sample plays:")
+# Get corresponding play info
+test_plays = play_df.iloc[np.where(np.isin(np.arange(len(play_df)), 
+                                    [i for i in range(len(play_df)) if i >= len(X_train)]))[0]]
+sample_plays = test_plays.iloc[sample_indices]
+
+print("\nPredictions for sample test plays:")
 print("-" * 70)
-for idx, (_, play) in enumerate(sample_plays.iterrows()):
-    actual = "✓ Complete" if play['complete'] == 1 else "✗ Incomplete"
-    prob = sample_probs[idx]
+for idx, (prob, actual) in enumerate(zip(sample_probs, sample_y)):
+    play = sample_plays.iloc[idx]
+    actual_str = "✓ Complete" if actual == 1 else "✗ Incomplete"
     print(f"Play {play['playId']}: Down={int(play['down'])}, YardsToGo={int(play['yardsToGo'])}")
     print(f"  Predicted: {prob:.1%} completion probability")
-    print(f"  Actual:    {actual}")
+    print(f"  Actual:    {actual_str}")
     print()
 
 # Step 9: Save model and results
@@ -245,7 +213,7 @@ results_dir.mkdir(exist_ok=True)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_path = models_dir / f'baseline_xgboost_{timestamp}.pkl'
 with open(model_path, 'wb') as f:
-    pickle.dump(final_model, f)
+    pickle.dump(xgb_model, f)
 print(f"✓ Model saved to: {model_path}")
 
 # Save feature names
@@ -275,9 +243,9 @@ print("\n" + "="*70)
 print("✅ BASELINE MODEL COMPLETE!")
 print("="*70)
 print(f"\nYour baseline XGBoost model achieves:")
-print(f"  • Log Loss: {np.mean(xgb_scores['log_loss']):.4f}")
-print(f"  • AUC:      {np.mean(xgb_scores['auc']):.4f}")
-print(f"  • Accuracy: {np.mean(xgb_scores['accuracy']):.1%}")
+print(f"  • Log Loss: {xgb_ll:.4f}")
+print(f"  • AUC:      {xgb_auc:.4f}")
+print(f"  • Accuracy: {xgb_acc:.1%}")
 print(f"\nModel files saved to: {models_dir}")
 print(f"Results saved to: {results_dir}")
 print(f"\nNext step: Add spatial features (receiver separation, air yards, etc.)")

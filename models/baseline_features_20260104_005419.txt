@@ -1,0 +1,11 @@
+down
+yardsToGo
+quarter
+is_first_down
+is_second_down
+is_third_down
+is_fourth_down
+is_short_yardage
+is_medium_yardage
+is_long_yardage
+is_third_and_long
