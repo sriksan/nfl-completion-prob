@@ -2,7 +2,6 @@ pandas
 numpy
 xgboost
 scikit-learn
-#opencv-python 
-#ultralytics
+opencv-python>=4.8
+ultralytics>=8.0
 matplotlib
-#seaborn
